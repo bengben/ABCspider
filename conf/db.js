@@ -18,7 +18,7 @@ pool.on('enqueue', function () {
 });
 
 pool.on('release', function (connection) {
-  // console.log('连接id： %d, 释放id:', connection.threadId);
+  console.log('连接id： %d,已释放', connection.threadId);
 });
 
 pool.on('error',function(err){

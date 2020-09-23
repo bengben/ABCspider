@@ -3,21 +3,19 @@
 /**
  * Module dependencies.
  */
-var app =  require('../app');
-var pool = require('../conf/db');
-var debug = require('debug')('abcspider:server');
-var http = require('http');
-var superagent = require('superagent');
-var cheerio = require('cheerio');
-
-
+var app = require("../app");
+var pool = require("../conf/db");
+var debug = require("debug")("abcspider:server");
+var http = require("http");
+var superagent = require("superagent");
+var cheerio = require("cheerio");
 
 /**
  * Get port from environment and store in Express.
  */
 
-var port = normalizePort(process.env.PORT || '8671');
-app.set('port', port);
+var port = normalizePort(process.env.PORT || "8671");
+app.set("port", port);
 
 /**
  * Create HTTP server.
@@ -30,11 +28,12 @@ var server = http.createServer(app);
  */
 
 server.listen(port, function (req, res) {
-  console.log('开始监听...');
-  spiderZuidaziyuan(1, 0);
+  console.log("开始监听...");
+  // spiderZuidaziyuan(1, 0);
+  updateMoives(1, 0);
 });
-server.on('error', onError);
-server.on('listening', onListening);
+server.on("error", onError);
+server.on("listening", onListening);
 
 /**
  * Normalize a port into a number, string, or false.
@@ -61,20 +60,20 @@ function normalizePort(val) {
  */
 
 function onError(error) {
-  if (error.syscall !== 'listen') {
+  if (error.syscall !== "listen") {
     throw error;
   }
 
-  var bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port;
+  var bind = typeof port === "string" ? "Pipe " + port : "Port " + port;
 
   // handle specific listen errors with friendly messages
   switch (error.code) {
-    case 'EACCES':
-      console.error(bind + ' requires elevated privileges');
+    case "EACCES":
+      console.error(bind + " requires elevated privileges");
       process.exit(1);
       break;
-    case 'EADDRINUSE':
-      console.error(bind + ' is already in use');
+    case "EADDRINUSE":
+      console.error(bind + " is already in use");
       process.exit(1);
       break;
     default:
@@ -88,10 +87,103 @@ function onError(error) {
 
 function onListening() {
   var addr = server.address();
-  var bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port;
-  debug('Listening on ' + bind);
+  var bind = typeof addr === "string" ? "pipe " + addr : "port " + addr.port;
+  debug("Listening on " + bind);
 }
 
+/**
+ *
+ * @param page
+ * 更新新电影
+ */
+function updateMoives(page, row, maxpage) {
+  console.log('-----------------------------------------------------------');
+  if (page === undefined) {
+    page = 1;
+  }
+
+  if (maxpage === undefined) {
+    maxpage = 0;
+  }
+  // 设置页数和行号
+  row += 1;
+
+  if (row == 51) {
+    page += 1;
+    row = 1;
+  }
+  // console.log("update moives...", page, "/", row);
+  var spiderUrl = "http://zuidazy5.com/?m=vod-index-pg-" + page + ".html";
+  var domain = "http://zuidazy5.com/";
+
+  console.log("页数：",page,"/",maxpage,", 行:"+row);
+  if (page > maxpage && maxpage != 0) {
+    updateMoives(1, 0);
+    return;
+  }
+
+  superagent
+    .get(spiderUrl)
+    .timeout({
+      response: 10000, // Wait 5 seconds for the server to start sending,
+      deadline: 10000, // but allow 1 minute for the file to finish loading.
+    })
+    .on("error", function (err) {
+      console.log(
+        "-------------------------------------------------->【警告】on(error)捕获异常"
+      );
+      // console.err('-------------------------------------------------->【警告】on(error)捕获异常');
+      console.log(
+        "--------------------------------------------------> 开始进入常规错误处理判断..."
+      );
+      return;
+    })
+    .end(async function (err, sres, sreq) {
+      // console.log('常规错误...');
+      // 常规的错误处理
+      if (err) {
+        // if (err.errno == 'ETIME') {
+        // console.log('【警告】ETIME......');
+        console.log(
+          "--------------------------------------------------> 进入常规错误处理程序"
+        );
+        // console.log('-------------------------------------------------->【警告】：',err.errno);
+        console.log(
+          "-------------------------------------------------->【重新启动】页数:",
+          page,
+          "行号:",
+          row
+        );
+        row -= 1;
+        updateMoives(page, row);
+        return;
+        // }
+      }
+
+      // console.log('表现正常,ok');
+      // console.log('加载cheerio...');
+      var $ = cheerio.load(sres.text);
+      // console.log('加载cheerio,ok');
+      //获取最大的页数
+      var pstr = $(".pages").text();
+      maxpage = pstr.substr(pstr.indexOf("/") + 1, 4);
+      // maxpage =1;
+      if ($(".xing_vb >ul").eq(row).find(".xing_vb7").length === 1) {
+        var moiveHtml = $(".xing_vb >ul").eq(row).children().children();
+        var moiveName = moiveHtml.eq(1).text();
+        var moiveUrl = moiveHtml.eq(1).children().attr("href");
+        var moiveType = moiveHtml.eq(2).text();
+        var newMoive = moiveHtml.eq(3).hasClass("xing_vb6");
+        console.log("电影：", moiveName);
+        spiderUrls(domain + moiveUrl, page, row, maxpage);
+      } else {
+        updateMoives(page, row, maxpage);
+      }
+      // }
+
+      // page+=1;
+    });
+}
 
 /**
  * 爬取电影主体信息
@@ -99,8 +191,6 @@ function onListening() {
  * @param row 电影行数(约定开始值为0)
  */
 function spiderZuidaziyuan(page, row) {
-
-
   // 设置页数和行号
   row += 1;
 
@@ -109,31 +199,43 @@ function spiderZuidaziyuan(page, row) {
     row = 1;
   }
 
-  if (page == 1203) {
+  if (page == 1207) {
     var myDate = new Date();
-    console.log('-------------------------------------------------->  end ', myDate.toUTCString());
+    console.log(
+      "-------------------------------------------------->  end ",
+      myDate.toUTCString()
+    );
     return;
   }
 
-
   // var page = 1;
-  console.log('--------------------------------------------------------');
-  console.log('页数/行号 ', page, ":", row,'          完成度:',Number(parseFloat(page/1120)).toFixed(5)*100+'%');
+  console.log("--------------------------------------------------------");
+  console.log(
+    "页数/行号 ",
+    page,
+    ":",
+    row,
+    "          完成度:",
+    Number(parseFloat(page / 1120)).toFixed(5) * 100 + "%"
+  );
 
-
-  var spiderUrl = 'http://zuidazy5.com/?m=vod-index-pg-' + page + '.html';
-  var domain = 'http://zuidazy5.com/';
+  var spiderUrl = "http://zuidazy5.com/?m=vod-index-pg-" + page + ".html";
+  var domain = "http://zuidazy5.com/";
   // console.log('开始爬虫...');
   superagent
     .get(spiderUrl)
     .timeout({
-      response: 10000,  // Wait 5 seconds for the server to start sending,
+      response: 10000, // Wait 5 seconds for the server to start sending,
       deadline: 10000, // but allow 1 minute for the file to finish loading.
     })
-    .on('error', function (err) {
-      console.log('-------------------------------------------------->【警告】on(error)捕获异常');
+    .on("error", function (err) {
+      console.log(
+        "-------------------------------------------------->【警告】on(error)捕获异常"
+      );
       // console.err('-------------------------------------------------->【警告】on(error)捕获异常');
-      console.log('--------------------------------------------------> 开始进入常规错误处理判断...');
+      console.log(
+        "--------------------------------------------------> 开始进入常规错误处理判断..."
+      );
       return;
     })
     .end(function (err, sres, sreq) {
@@ -141,13 +243,20 @@ function spiderZuidaziyuan(page, row) {
       // 常规的错误处理
       if (err) {
         // if (err.errno == 'ETIME') {
-          // console.log('【警告】ETIME......');
-          console.log('--------------------------------------------------> 进入常规错误处理程序');
-          // console.log('-------------------------------------------------->【警告】：',err.errno);
-          console.log('-------------------------------------------------->【重新启动】页数:', page, '行号:', row);
-          row -= 1;
-          spiderZuidaziyuan(page, row);
-          return;
+        // console.log('【警告】ETIME......');
+        console.log(
+          "--------------------------------------------------> 进入常规错误处理程序"
+        );
+        // console.log('-------------------------------------------------->【警告】：',err.errno);
+        console.log(
+          "-------------------------------------------------->【重新启动】页数:",
+          page,
+          "行号:",
+          row
+        );
+        row -= 1;
+        spiderZuidaziyuan(page, row);
+        return;
         // }
       }
       // console.log('表现正常,ok');
@@ -155,36 +264,37 @@ function spiderZuidaziyuan(page, row) {
       var $ = cheerio.load(sres.text);
       // console.log('加载cheerio,ok');
 
-      var moiveHtml = $('.xing_vb >ul').eq(row).children().children();
+      var moiveHtml = $(".xing_vb >ul").eq(row).children().children();
       var moiveName = moiveHtml.eq(1).text();
-      var moiveUrl = moiveHtml.eq(1).children().attr('href');
+      var moiveUrl = moiveHtml.eq(1).children().attr("href");
       var moiveType = moiveHtml.eq(2).text();
-      var newMoive = moiveHtml.eq(3).hasClass('xing_vb6');
-      console.log('电影：', moiveName);
+      var newMoive = moiveHtml.eq(3).hasClass("xing_vb6");
+      console.log("电影：", moiveName);
       spiderUrls(domain + moiveUrl, page, row);
-
-
     });
-
 }
 
 /**
  * 爬取具体电影播放地址列表
  * @param baseUrl 电影详情url地址
  */
-function spiderUrls(itemUrl, page, row) {
+async function spiderUrls(itemUrl, page, row, maxpage) {
   // console.log('');
   // console.log('爬取播放地址开始...');
   // console.log('接受URL：', itemUrl);
   superagent
     .get(itemUrl)
     .timeout({
-      response: 10000,  // Wait 5 seconds for the server to start sending,
+      response: 10000, // Wait 5 seconds for the server to start sending,
       deadline: 10000, // but allow 1 minute for the file to finish loading.
     })
-    .on('error', function (err) {
-      console.log('-------------------------------------------------->【警告】播放地址爬取警告');
-      console.log('--------------------------------------------------> 开始进入常规错误处理判断...');
+    .on("error", function (err) {
+      console.log(
+        "-------------------------------------------------->【警告】播放地址爬取警告"
+      );
+      console.log(
+        "--------------------------------------------------> 开始进入常规错误处理判断..."
+      );
       // console.log('================>',err);
       // spiderZuidaziyuan(page, row);
       return;
@@ -193,72 +303,111 @@ function spiderUrls(itemUrl, page, row) {
       // 常规的错误处理
       if (err) {
         // if (err.errno == 'ETIME') {
-          // console.log('【警告】ETIME......');
-          console.log('--------------------------------------------------> 进入常规错误处理程序');
-          console.log('-------------------------------------------------->【警告】',err.errno);
-          console.log('-------------------------------------------------->【重新启动】地址：', itemUrl);
-          spiderUrls(itemUrl, page, row);
-          return;
+        // console.log('【警告】ETIME......');
+        console.log(
+          "--------------------------------------------------> 进入常规错误处理程序"
+        );
+        console.log(
+          "-------------------------------------------------->【警告】",
+          err.errno
+        );
+        console.log(
+          "-------------------------------------------------->【重新启动】地址：",
+          itemUrl
+        );
+        spiderUrls(itemUrl, page, row);
+        return;
         // }
       }
 
       var moiveInfo = {
-        zname: '',
-        tip: '',
-        director: '',
-        actor: '',
-        area: '',
-        year: '',
-        date: '',
+        zname: "",
+        tip: "",
+        director: "",
+        actor: "",
+        area: "",
+        year: "",
+        date: "",
         list: [],
       };
 
       var $ = cheerio.load(ssres.text);
 
-      var zidstr = $('.nvc').find('dd>a').eq(2).attr('href') + '';
-      var zid = zidstr.substring(zidstr.lastIndexOf('-') + 1, zidstr.indexOf('.'));
-      var vodBox = $('.vodBox');//基本信息选取块
-      moiveInfo.zname = vodBox.find('.vodh >h2').text();
-      moiveInfo.tip = vodBox.find('.vodh >span').text();
-      var dstr = vodBox.find('.vodinfobox').find('li').eq(1).text();
-      moiveInfo.director = dstr.substr(dstr.indexOf('：') + 1, dstr.length);
-      moiveInfo.actor = vodBox.find('.vodinfobox').find('li').eq(2).find('span').text();
-      moiveInfo.area = vodBox.find('.vodinfobox').find('li').eq(4).find('span').text();
-      moiveInfo.year = vodBox.find('.vodinfobox').find('li').eq(6).find('span').text();
-      moiveInfo.date = vodBox.find('.vodinfobox').find('li').eq(7).find('span').text();
+      var zidstr = $(".nvc").find("dd>a").eq(2).attr("href") + "";
+      var zid = zidstr.substring(
+        zidstr.lastIndexOf("-") + 1,
+        zidstr.indexOf(".")
+      );
+      var vodBox = $(".vodBox"); //基本信息选取块
+      moiveInfo.zname = vodBox.find(".vodh >h2").text();
+      moiveInfo.tip = vodBox.find(".vodh >span").text();
+      var dstr = vodBox.find(".vodinfobox").find("li").eq(1).text();
+      moiveInfo.director = dstr.substr(dstr.indexOf("：") + 1, dstr.length);
+      moiveInfo.actor = vodBox
+        .find(".vodinfobox")
+        .find("li")
+        .eq(2)
+        .find("span")
+        .text();
+      moiveInfo.area = vodBox
+        .find(".vodinfobox")
+        .find("li")
+        .eq(4)
+        .find("span")
+        .text();
+      moiveInfo.year = vodBox
+        .find(".vodinfobox")
+        .find("li")
+        .eq(6)
+        .find("span")
+        .text();
+      moiveInfo.date = vodBox
+        .find(".vodinfobox")
+        .find("li")
+        .eq(7)
+        .find("span")
+        .text();
 
-      var vodplayinfo = $('.vodplayinfo');//播放类型列表块
-      var playList = vodplayinfo.find('#play_1 li');
-      var playtype = vodplayinfo.find('#play_1>h3>span').text();
+      var vodplayinfo = $(".vodplayinfo"); //播放类型列表块
+      var playList = vodplayinfo.find("#play_1 li");
+      var playtype = vodplayinfo.find("#play_1>h3>span").text();
       var playStr, tip, url;
       for (var i = 0; i < playList.length; i++) {
         playStr = playList.eq(i).text();
-        tip = playStr.substr(0, playStr.indexOf('$'));
-        url = playStr.substr(playStr.indexOf('$') + 1, playStr.length);
+        tip = playStr.substr(0, playStr.indexOf("$"));
+        url = playStr.substr(playStr.indexOf("$") + 1, playStr.length);
         moiveInfo.list.push([zid, tip, url, playtype]);
       }
 
-      playList = vodplayinfo.find('#play_2 li');
-      playtype = vodplayinfo.find('#play_2>h3>span').text();
+      playList = vodplayinfo.find("#play_2 li");
+      playtype = vodplayinfo.find("#play_2>h3>span").text();
       for (var j = 0; j < playList.length; j++) {
         playStr = playList.eq(j).text();
-        tip = playStr.substr(0, playStr.indexOf('$'));
-        url = playStr.substr(playStr.indexOf('$') + 1, playStr.length);
+        tip = playStr.substr(0, playStr.indexOf("$"));
+        url = playStr.substr(playStr.indexOf("$") + 1, playStr.length);
         moiveInfo.list.push([zid, tip, url, playtype]);
       }
 
-      playList = vodplayinfo.find('#down_1').find('li');
-      playtype = 'mp4';
+      playList = vodplayinfo.find("#down_1").find("li");
+      playtype = "mp4";
       for (var k = 0; k < playList.length; k++) {
         playStr = playList.eq(k).text();
-        tip = playStr.substr(0, playStr.indexOf('$'));
-        url = playStr.substr(playStr.indexOf('$') + 1, playStr.length);
+        tip = playStr.substr(0, playStr.indexOf("$"));
+        url = playStr.substr(playStr.indexOf("$") + 1, playStr.length);
         moiveInfo.list.push([zid, tip, url, playtype]);
       }
 
-
       // console.log('插入数据库...', moiveInfo.zname);
-      var moiveModel = { zid: zid, zname: moiveInfo.zname, ztip: moiveInfo.tip, zdirector: moiveInfo.director, zactor: moiveInfo.actor, zarea: moiveInfo.area, zyear: moiveInfo.year, zdate: moiveInfo.date };
+      var moiveModel = {
+        zid: zid,
+        zname: moiveInfo.zname,
+        ztip: moiveInfo.tip,
+        zdirector: moiveInfo.director,
+        zactor: moiveInfo.actor,
+        zarea: moiveInfo.area,
+        zyear: moiveInfo.year,
+        zdate: moiveInfo.date,
+      };
 
       //处理批量插入的播放列表数据
       // console.log('pool 是否为空：>>>>>',pool.config);
@@ -268,17 +417,27 @@ function spiderUrls(itemUrl, page, row) {
         // console.log("connection 是否为空： ",connection);
         var movieId;
         connection.beginTransaction(function (err) {
-          if (err) { throw err; }
+          if (err) {
+            throw err;
+          }
           //1. 删除play表
           // console.log('准备删除电影zid：',zid);
-          connection.query('DELETE FROM movie WHERE zid = ' + zid, function (error, results, fields) {
+          connection.query("DELETE FROM movie WHERE zid = " + zid, function (
+            error,
+            results,
+            fields
+          ) {
             if (error) throw error;
             // console.log('删除电影基础数据： ' + results.affectedRows + ' 条');
           });
 
           //2.写入movie表
           // console.log('写入movie...');
-          connection.query('INSERT INTO movie SET ?', moiveModel, function (error, results, fields) {
+          connection.query("INSERT INTO movie SET ?", moiveModel, function (
+            error,
+            results,
+            fields
+          ) {
             if (error) {
               return connection.rollback(function () {
                 throw error;
@@ -288,55 +447,50 @@ function spiderUrls(itemUrl, page, row) {
           });
           //3. 删除play表
           // console.log('准备删除电影zid：',zid);
-          connection.query('DELETE FROM play WHERE zid = ' + zid, function (error, results, fields) {
+          connection.query("DELETE FROM play WHERE zid = " + zid, function (
+            error,
+            results,
+            fields
+          ) {
             if (error) throw error;
             // console.log('删除播放数据： ' + results.affectedRows + ' 条');
           });
 
-
-
           //4. 写入play表
-          connection.query('INSERT INTO play(zid,tip,url,type) VALUES  ?', [moiveInfo.list], function (error, results, fields) {
-            if (error) {
-              return connection.rollback(function () {
-                throw error;
-              });
+          connection.query(
+            "INSERT INTO play(zid,tip,url,type) VALUES  ?",
+            [moiveInfo.list],
+            function (error, results, fields) {
+              if (error) {
+                return connection.rollback(function () {
+                  throw error;
+                });
+              }
+              // movieId = results.insertId;
+              // console.log('更新地址：', moiveInfo.list.length);
             }
-            // movieId = results.insertId;
-            // console.log('更新地址：', moiveInfo.list.length);
-          });
+          );
 
           //5. 提交事务
           // console.log('提交事务...');
           connection.commit(function (err) {
             if (err) {
               return connection.rollback(function () {
-
                 connection.release();
                 throw err;
               });
             } else {
-
+              console.log("入库完成!");
               connection.release();
               // console.log('提交事务,ok');
-              console.log('入库完成!');
-              spiderZuidaziyuan(page, row);
+              // spiderZuidaziyuan(page, row);
+              updateMoives(page, row, maxpage);
             }
           });
-
-
-
-        });//end beginTransaction
-
+        }); //end beginTransaction
       }); //end getConnection
-
-
-
-
     });
-
 }
-
 
 function getNowDate() {
   // 获取当前日期
